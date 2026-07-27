@@ -14,9 +14,12 @@ except ImportError:
     st.info("กรุณาเปิด Terminal แล้วพิมพ์: pip install streamlit-image-coordinates")
     st.stop()
 
-# --- นำเข้าไลบรารีสำหรับสร้าง PowerPoint ---
+# --- นำเข้าไลบรารีสำหรับสร้าง PowerPoint และจัดการข้อความ ---
 try:
     from pptx import Presentation
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN
+    from pptx.dml.color import RGBColor
 except ImportError:
     st.error("⚠️ ไม่พบไลบรารี python-pptx (สำหรับสร้าง PowerPoint)")
     st.info("กรุณาเปิด Terminal แล้วพิมพ์: pip install python-pptx")
@@ -178,13 +181,10 @@ with st.sidebar:
     if template_file:
         st.session_state.template = Image.open(template_file)
 
-    # 2. Font (รองรับการอัปโหลดหลายฟอนต์จากโค้ดที่ 2)
+    # 2. Font
     font_file = st.file_uploader("2. ฟอนต์ภาษาไทย (.ttf) อัปโหลดเพิ่มได้", type=['ttf'])
     if font_file:
-        # เก็บสำหรับเข้ากันได้กับโค้ดแรก
         st.session_state.font_bytes = font_file.getvalue() 
-        
-        # เก็บแบบ Dictionary สำหรับแยกฟอนต์จากโค้ดที่ 2
         f_name = font_file.name.split('.')[0]
         if f_name not in st.session_state.fonts_dict:
             st.session_state.fonts_dict[f_name] = font_file.getvalue()
@@ -194,7 +194,6 @@ with st.sidebar:
         if not st.session_state.fonts_dict:
             st.warning("⚠️ แนะนำให้อัปโหลดไฟล์ .ttf เพื่อให้ปรับขนาด/แสดงภาษาไทยได้")
 
-    # ตัวเลือกรูปแบบฟอนต์ (จากโค้ดแรก)
     font_version = st.radio("ชนิดฟอนต์ (แก้ปัญหาสระลอย/กลายเป็นสี่เหลี่ยม)", 
                             ["ใหม่", "เก่า"], 
                             format_func=lambda x: "ฟอนต์รุ่นใหม่ (มาตรฐาน OpenType)" if x == "ใหม่" else "ฟอนต์รุ่นเก่า (ระบบ PUA ดั้งเดิม)")
@@ -220,7 +219,6 @@ col_img, col_form = st.columns([1.5, 1])
 with col_img:
     st.markdown("**🖱️ คลิกลงบนรูปภาพเพื่อดึงพิกัด(คลิกบนรูป หรือ ระบุ X และ Y)**")
     
-    # คำนวณการย่อภาพ
     original_w, original_h = st.session_state.template.size
     display_w = 700 
     
@@ -258,7 +256,6 @@ with col_form:
         f_size = st.slider("ขนาดฟอนต์", 10, 500, value=60)
         f_color = st.color_picker("เลือกสี", value="#000000")
         
-        # เพิ่มตัวเลือกฟอนต์จากโค้ดที่ 2
         selected_font = None
         if st.session_state.font_names:
             selected_font = st.selectbox("เลือกฟอนต์สำหรับข้อความนี้", st.session_state.font_names)
@@ -272,7 +269,7 @@ with col_form:
                 'text': t_val, 'column': t_col,
                 'x': x_pos, 'y': y_pos,
                 'size': f_size, 'color': f_color,
-                'font_name': selected_font # บันทึกฟอนต์ที่เลือกลงในแต่ละชุดข้อความ
+                'font_name': selected_font 
             })
             st.rerun()
 
@@ -296,13 +293,12 @@ if st.session_state.texts:
         row_idx = st.number_input("ดูตัวอย่างแถวที่:", 0, max(0, len(st.session_state.data)-1), 0)
         preview_row = st.session_state.data.iloc[row_idx].to_dict()
     
-    # ส่งค่า font_version ไปประมวลผลตอนวาดพรีวิว
     preview_img = render_certificate(st.session_state.template, st.session_state.texts, preview_row, st.session_state.font_version)
     st.image(preview_img, width=650)
 else:
     st.info("ตั้งค่าข้อความด้านบนก่อนครับ")
 
-# --- Export (ยึดตามโค้ดแรกเพราะครอบคลุม PNG, JPG, PDF) ---
+# --- Export ---
 if 'data' in st.session_state and st.session_state.texts:
     st.markdown("---")
     st.header("4️⃣ สร้างไฟล์ทั้งหมด")
@@ -311,41 +307,98 @@ if 'data' in st.session_state and st.session_state.texts:
     filename_col = col_export1.selectbox("เลือกคอลัมน์ชื่อไฟล์ (สำหรับ PNG/JPG/PDF)", st.session_state.data.columns)
     export_format = col_export2.radio("เลือกนามสกุลไฟล์", ["PNG", "JPG", "PDF", "PowerPoint"], horizontal=True)
     
+    if export_format == "PowerPoint":
+        st.info("💡 หมายเหตุ: ไฟล์ PowerPoint จะแยกกล่องข้อความให้คลิกแก้ไขได้ (ฟอนต์จะแสดงผลถูกต้องหากเครื่องคอมพิวเตอร์ที่เปิดไฟล์ติดตั้งฟอนต์นั้นไว้แล้ว)")
+
     if st.button("🚀 สร้างไฟล์", type="primary"):
         
         # ==========================================
-        # 1. ส่งออกแบบ PowerPoint
+        # 1. ส่งออกแบบ PowerPoint (ข้อความแก้ไขได้)
         # ==========================================
         if export_format == "PowerPoint":
-            with st.spinner("กำลังสร้างไฟล์ PowerPoint..."):
+            with st.spinner("กำลังสร้างไฟล์ PowerPoint (แยกข้อความ)..."):
                 prs = Presentation()
                 
-                # กำหนดขนาดสไลด์ให้พอดีกับภาพต้นฉบับ
+                # กำหนดขนาดสไลด์ให้พอดีกับภาพต้นฉบับ (1 pixel = 9525 EMUs)
                 img_width, img_height = st.session_state.template.size
-                # PPTX ใช้หน่วย EMUs (ประมาณ 9525 EMUs ต่อ 1 pixel ที่ 96 DPI)
                 prs.slide_width = img_width * 9525
                 prs.slide_height = img_height * 9525
                 
-                # ใช้ layout สไลด์เปล่า
+                # ใช้ layout สไลด์เปล่า (ไม่มีกล่องข้อความขยะ)
                 blank_slide_layout = prs.slide_layouts[6]
                 
-                for idx, row in st.session_state.data.iterrows():
-                    final_img = render_certificate(st.session_state.template, st.session_state.texts, row.to_dict(), st.session_state.font_version)
-                    
-                    # แปลงรูปที่ถูกวาดแล้วเพื่อใส่ลงในสไลด์ (ใช้ PNG รักษาคุณภาพสูงสุด)
-                    img_io = BytesIO()
-                    final_img.save(img_io, format="PNG")
-                    img_io.seek(0)
-                    
-                    slide = prs.slides.add_slide(blank_slide_layout)
-                    slide.shapes.add_picture(img_io, 0, 0, width=prs.slide_width, height=prs.slide_height)
+                # บันทึก "ภาพพื้นหลังเปล่าๆ" ลงหน่วยความจำ 
+                # (ป้องกันข้อผิดพลาดกรณีเป็นไฟล์ที่มีความโปร่งใส ต้องแปลงเป็น RGB ก่อน)
+                bg_io = BytesIO()
+                bg_img = st.session_state.template.convert('RGB') if st.session_state.template.mode != 'RGB' else st.session_state.template
+                bg_img.save(bg_io, format="PNG")
                 
-                # เก็บไฟล์ PowerPoint ลงในหน่วยความจำ
+                for idx, row in st.session_state.data.iterrows():
+                    slide = prs.slides.add_slide(blank_slide_layout)
+                    
+                    # 1. แปะภาพพื้นหลัง
+                    bg_io.seek(0)
+                    slide.shapes.add_picture(bg_io, 0, 0, width=prs.slide_width, height=prs.slide_height)
+                    
+                    # 2. สร้าง Text Box วางซ้อนทับตามพิกัดของข้อความแต่ละตัว
+                    for txt in st.session_state.texts:
+                        # ดึงเนื้อหา
+                        if txt['type'] == 'static':
+                            content = txt['text']
+                        else:
+                            if txt['column'] in row:
+                                val = row[txt['column']]
+                                content = str(val) if pd.notna(val) else ""
+                            else:
+                                continue
+                                
+                        if not content: continue
+                        
+                        # คำนวณขนาดและตำแหน่ง (แปลงจาก px เป็น pt และ EMUs)
+                        # ขนาดฟอนต์ PowerPoint ใช้พอยต์ (1 px = 0.75 pt)
+                        font_pt_size = txt['size'] * 0.75 
+                        
+                        # จุด Y ในโปรแกรมเราคือฐานบรรทัด แต่ Text Box ใน PPTX คือจุดบนสุด 
+                        # จึงต้องเลื่อน Y ขึ้นไปตามขนาดฟอนต์
+                        pixel_y = txt['y'] - txt['size']
+                        
+                        # จัดให้อยู่กึ่งกลางเป๊ะๆ: สร้าง Text Box ให้กว้างสุด แล้วตั้ง Align เป็น Center
+                        box_width_px = img_width 
+                        left_px = txt['x'] - (box_width_px / 2)
+                        
+                        left = int(left_px * 9525)
+                        top = int(pixel_y * 9525)
+                        width = int(box_width_px * 9525)
+                        height = int(txt['size'] * 1.5 * 9525) # เผื่อความสูงให้ไม่ตกขอบ
+                        
+                        txBox = slide.shapes.add_textbox(left, top, width, height)
+                        tf = txBox.text_frame
+                        tf.word_wrap = False
+                        
+                        # ตั้งค่าพารากราฟและใส่ข้อความ
+                        p = tf.paragraphs[0]
+                        p.alignment = PP_ALIGN.CENTER
+                        p.text = content
+                        
+                        # กำหนดรูปแบบฟอนต์
+                        run = p.runs[0]
+                        run.font.size = Pt(font_pt_size)
+                        
+                        # แปลงสี Hex เป็น RGBColor สำหรับ PowerPoint
+                        hex_color = txt['color'].lstrip('#')
+                        if len(hex_color) == 6:
+                            run.font.color.rgb = RGBColor.from_string(hex_color)
+                            
+                        # ตั้งชื่อฟอนต์
+                        if txt.get('font_name'):
+                            run.font.name = txt['font_name']
+                
+                # เตรียมดาวน์โหลด
                 pptx_io = BytesIO()
                 prs.save(pptx_io)
                 pptx_io.seek(0)
                 
-                st.success("✅ สร้างไฟล์ PowerPoint ทุกหน้าสำเร็จ!")
+                st.success("✅ สร้างไฟล์ PowerPoint เรียบร้อย (คลิกแก้ไขข้อความข้างในได้เลย)!")
                 st.download_button(
                     label="📥 ดาวน์โหลดไฟล์ PowerPoint (.pptx)", 
                     data=pptx_io, 
