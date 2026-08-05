@@ -1,6 +1,6 @@
-streamlit
-Pillow
-pandas
-streamlit-image-coordinates
-python-pptx
+streamlit>=1.32.0
+Pillow>=9.0.0
+pandas>=1.3.0
+streamlit-image-coordinates>=0.4.0
+python-pptx>=0.6.21
 openpyxl
